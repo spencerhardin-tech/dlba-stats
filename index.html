@@ -1,0 +1,1465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stat Tracker (Safe Init)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { margin-bottom: 12px; }
+    .teams { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+    @media (max-width: 900px) { .teams { grid-template-columns: 1fr; } }
+    .panel { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    .panel h2 { margin-top: 0; }
+    .player-section, .team-editor { margin-bottom: 20px; }
+    .stat-buttons button, .team-editor button { margin-right: 5px; margin-bottom: 5px; }
+    .box { background:#fafafa; border:1px solid #eee; border-radius:10px; padding:10px; }
+    .team-totals { display: grid; grid-template-columns: repeat(6, minmax(80px,1fr)); gap: 6px; font-size: 14px; }
+    .team-totals div { padding: 6px; border: 1px solid #eee; border-radius: 8px; text-align: center; }
+    .small { font-size: 12px; color:#666; }
+    .hidden { display: none; }
+    button { padding: 6px 10px; }
+  
+    /* === Color Theme (Light) === */
+    :root {
+      --blue: #0096C7;   /* primary / made shots / undo */
+      --green: #8BC53F;  /* assists / rebounds / steals / blocks */
+      --red: #E63946;    /* misses / New Game */
+      --orange: #FFB703; /* turnovers / fouls */
+      --bg: #ffffff;
+      --on-bg: #000000;
+      --surface: #ffffff;
+      --on-surface: #111111;
+      --border: #E5E5E5;
+    }
+    body { background: var(--bg); color: var(--on-bg); }
+    .panel { background: var(--surface); border: 1px solid var(--border); color: var(--on-surface); }
+    button { padding: 6px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+    button.primary { background: var(--blue); color: #fff; }
+    button.success { background: var(--blue); color: #fff; }
+    button.accent  { background: var(--green); color: #fff; }
+    button.danger  { background: var(--red); color: #fff; }
+    button.warn    { background: var(--orange); color: #fff; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  
+    /* === Outline Buttons: colored border + text, no fill === */
+    .stat-buttons button,
+    button.primary,
+    button.success,
+    button.accent,
+    button.danger,
+    button.warn {
+      background: transparent !important;
+      border-width: 2px !important;
+    }
+    button.primary    { border-color: var(--blue);   color: var(--blue); }
+    button.success    { border-color: var(--blue);   color: var(--blue); }
+    button.accent     { border-color: var(--green);  color: var(--green); }
+    button.danger     { border-color: var(--red);    color: var(--red); }
+    button.warn       { border-color: var(--orange); color: var(--orange); }
+    button:disabled   { opacity: 0.6; }
+
+  
+    /* === Touch Optimizations === */
+    :root { --tap-bg: rgba(0,0,0,0.04); }
+    .stat-buttons { gap: 10px; }
+    .stat-buttons button, button { 
+      touch-action: manipulation; 
+      -webkit-tap-highlight-color: rgba(0,0,0,0.12);
+      -webkit-user-select: none; user-select: none;
+      font-size: 16px;
+      min-height: 44px; 
+      min-width: 56px;
+      padding: 10px 12px;
+    }
+    /* Larger targets on coarse pointers (most touchscreens) */
+    @media (pointer: coarse) {
+      .stat-buttons button, button {
+        min-height: 48px;
+        min-width: 72px;
+        padding: 14px 16px;
+        font-size: 18px;
+      }
+      h3 { font-size: 20px; }
+    }
+    /* Active feedback (subtle tint while pressed) */
+    button.primary:active    { background: rgba(0,150,199,0.12) !important; }
+    button.success:active    { background: rgba(0,150,199,0.12) !important; }
+    button.accent:active     { background: rgba(139,197,63,0.14) !important; }
+    button.danger:active     { background: rgba(230,57,70,0.12) !important; }
+    button.warn:active       { background: rgba(255,183,3,0.12) !important; }
+    /* Make panels a tad more separated for fingers */
+    .panel { margin-bottom: 12px; }
+
+    .subtract-btn {
+      border-color: #999 !important;
+      color: #666 !important;
+      min-width: 44px !important;
+      padding: 10px 10px !important;
+    }
+
+    body.editing-mode .subtract-btn {
+      display: inline-block !important;
+    }
+
+    .advanced-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .advanced-card {
+      border: 1px solid #eee;
+      border-radius: 10px;
+      padding: 10px;
+      background: #fafafa;
+    }
+
+    .advanced-card h3 {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+
+    .advanced-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    .advanced-table th,
+    .advanced-table td {
+      padding: 6px;
+      border-bottom: 1px solid #ececec;
+      text-align: center;
+    }
+
+    .advanced-table th:first-child,
+    .advanced-table td:first-child {
+      text-align: left;
+    }
+
+  
+    /* === Compact 3-on-3 Live Stat Console === */
+    body { margin: 10px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+
+    .setup-row {
+      display:grid;
+      grid-template-columns: 1fr minmax(180px,260px) 1fr;
+      gap:10px;
+      align-items:end;
+      margin-bottom:8px;
+    }
+    .setup-field { min-width:0; }
+    .setup-field label { display:block; font-size:11px; font-weight:700; color:#666; margin-bottom:3px; }
+    .setup-field select, .setup-field input {
+      box-sizing:border-box; width:100%; min-height:38px; padding:6px 8px;
+      border:1px solid var(--border); border-radius:7px; font-size:15px; background:#fff;
+    }
+
+    .compact-toolbar {
+      display:flex; flex-wrap:wrap; gap:6px; margin:7px 0;
+    }
+    .compact-toolbar button { min-height:38px; padding:7px 10px; font-size:14px; }
+
+    .score-strip {
+      display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center;
+      padding:7px 10px; margin:7px 0 8px; border:1px solid var(--border); border-radius:9px; background:#fafafa;
+    }
+    .score-side { display:flex; align-items:center; gap:8px; min-width:0; }
+    .score-side.right { justify-content:flex-end; }
+    .score-team { font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .score-num { font-size:30px; font-weight:800; line-height:1; }
+    .vs { font-size:11px; font-weight:800; color:#777; }
+
+    .mode-tabs { display:flex; gap:6px; margin:7px 0; }
+    .mode-tabs button { flex:1 1 0; min-height:38px; padding:6px; font-size:13px; }
+    .mode-tabs button.active-mode { background:var(--blue)!important; color:white!important; border-color:var(--blue)!important; }
+
+    .active-grid {
+      display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start;
+    }
+    .team-console {
+      border:1px solid var(--border); border-radius:9px; padding:7px; background:#fff; min-width:0;
+    }
+    .team-console-head {
+      display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:5px;
+    }
+    .team-console-head strong { font-size:14px; }
+    .team-console-head span { font-size:11px; color:#777; }
+
+    .player-row {
+      display:grid;
+      grid-template-columns: minmax(105px, .9fr) minmax(0, 2.2fr) minmax(125px, 1.2fr);
+      gap:6px; align-items:center;
+      padding:6px 0; border-top:1px solid #eee;
+    }
+    .player-row:first-child { border-top:0; }
+    .player-name { font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .stat-actions { display:flex; flex-wrap:wrap; gap:4px; min-width:0; }
+    .stat-actions button {
+      min-width:50px!important; min-height:36px!important; padding:5px 7px!important;
+      margin:0!important; font-size:13px!important;
+    }
+    .player-meta { min-width:0; }
+    .live-line { font-size:11px; color:#555; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:3px; }
+    .sub-row { display:flex; gap:4px; align-items:center; }
+    .sub-row select {
+      min-width:0; width:100%; height:30px; padding:3px 5px; border:1px solid var(--border);
+      border-radius:6px; font-size:12px; background:#fff;
+    }
+    .sub-row button { min-width:auto!important; min-height:30px!important; padding:3px 7px!important; font-size:11px!important; }
+
+    details.compact-panel {
+      border:1px solid var(--border); border-radius:8px; margin-top:7px; background:#fff;
+    }
+    details.compact-panel > summary {
+      cursor:pointer; padding:7px 10px; font-weight:700; font-size:13px; list-style:none;
+    }
+    details.compact-panel > summary::-webkit-details-marker { display:none; }
+    .compact-panel-body { padding:0 8px 8px; }
+    .compact-panel-body button { min-height:34px; padding:5px 8px; font-size:12px; margin:2px; }
+
+    /* Keep review panels compact and scroll locally if needed. */
+    #stats, #advancedStats, #savedGamesPreview { margin-top:7px; max-height:290px; overflow:auto; padding:8px; }
+    #stats h2, #advancedStats h2, #savedGamesPreview h2 { font-size:17px; margin:0 0 6px; }
+
+    @media (max-width: 780px) {
+      .setup-row { grid-template-columns:1fr; }
+      .active-grid { grid-template-columns:1fr; }
+      .player-row { grid-template-columns:95px minmax(0,1fr) 120px; }
+      .stat-actions button { min-width:46px!important; }
+    }
+
+  
+    /* === All stat groups visible simultaneously === */
+    .player-row {
+      display:grid;
+      grid-template-columns: minmax(95px,.75fr) minmax(0,3.1fr) minmax(120px,1fr);
+      gap:6px;
+      align-items:center;
+      padding:6px 0;
+      border-top:1px solid #eee;
+    }
+    .all-stat-groups {
+      display:grid;
+      grid-template-columns: 1.6fr 1fr 1.15fr;
+      gap:6px;
+      min-width:0;
+    }
+    .stat-cluster {
+      border:1px solid #eee;
+      border-radius:7px;
+      padding:4px;
+      min-width:0;
+      background:#fcfcfc;
+    }
+    .cluster-title {
+      font-size:9px;
+      line-height:1.1;
+      text-transform:uppercase;
+      letter-spacing:.04em;
+      color:#777;
+      font-weight:800;
+      margin-bottom:3px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .cluster-buttons {
+      display:flex;
+      flex-wrap:wrap;
+      gap:3px;
+    }
+    .cluster-buttons button {
+      min-width:42px!important;
+      min-height:32px!important;
+      padding:4px 6px!important;
+      margin:0!important;
+      font-size:11px!important;
+    }
+    @media (max-width: 980px) {
+      .all-stat-groups { grid-template-columns:1fr; }
+      .player-row { grid-template-columns:90px minmax(0,1fr) 115px; }
+    }
+
+  </style>
+</head>
+<body>
+  <h1>DLBA Stats</h1>
+
+  <div class="setup-row">
+    <div class="setup-field">
+      <label for="team1">Team 1</label>
+      <select id="team1" onchange="handleTeamChange(1)"></select>
+    </div>
+    <div class="setup-field">
+      <label for="gameIdInput">Game ID</label>
+      <input type="text" id="gameIdInput" placeholder="Game ID" />
+    </div>
+    <div class="setup-field">
+      <label for="team2">Team 2</label>
+      <select id="team2" onchange="handleTeamChange(2)"></select>
+    </div>
+  </div>
+
+  <div class="compact-toolbar">
+    <button id="undoBtn" class="primary" onclick="undo()">Undo</button>
+    <button onclick="toggleStats()">Box Score</button>
+    <button id="saveGameBtn" class="accent" onclick="finalizeGame()">Save Game</button>
+    <button id="newGameBtn" class="danger" onclick="newGame()">New Game</button>
+  </div>
+
+  <div class="score-strip">
+    <div class="score-side">
+      <span class="score-team" id="score-team1-name">Team 1</span>
+      <span class="score-num" id="team1-score">0</span>
+    </div>
+    <div class="vs">VS</div>
+    <div class="score-side right">
+      <span class="score-num" id="team2-score">0</span>
+      <span class="score-team" id="score-team2-name">Team 2</span>
+    </div>
+  </div>
+
+
+  <div class="active-grid">
+    <section class="team-console">
+      <div class="team-console-head">
+        <strong id="team1-console-title">Team 1</strong>
+        <span>3 active</span>
+      </div>
+      <div id="active-team-1"></div>
+    </section>
+    <section class="team-console">
+      <div class="team-console-head">
+        <strong id="team2-console-title">Team 2</strong>
+        <span>3 active</span>
+      </div>
+      <div id="active-team-2"></div>
+    </section>
+  </div>
+
+  <div class="small" id="savedGamesInfo" style="margin-top:6px;"></div>
+  <div class="small" id="editModeInfo" style="margin-top:3px;"></div>
+
+  <div id="stats" class="hidden panel"></div>
+  <div id="advancedStats" class="hidden panel"></div>
+  <div id="savedGamesPreview" class="hidden panel"></div>
+
+  <details class="compact-panel">
+    <summary>Game Management / Settings</summary>
+    <div class="compact-panel-body">
+      <button onclick="toggleAdvancedStats()">Advanced Stats</button>
+      <button id="exportGamesBtn" class="primary" onclick="exportGameHistoryCSV()">Export CSV</button>
+      <button id="previewGamesBtn" class="primary" onclick="toggleSavedGamesPreview()">Saved Games</button>
+      <button id="clearGamesBtn" class="danger" onclick="clearSavedGames()">Clear Saved Log</button>
+      <button id="cancelEditBtn" class="warn" onclick="cancelEditMode()" style="display:none;">Cancel Edit</button>
+
+      <hr style="border:0;border-top:1px solid #eee;margin:8px 0;">
+      <div class="team-editor">
+        <strong>Edit Teams</strong><br>
+        <label for="editTeam" class="small">Team</label>
+        <select id="editTeam" onchange="showTeamPlayers()"></select>
+        <ul id="teamPlayerList"></ul>
+        <input type="text" id="newPlayerName" placeholder="New player" onkeydown="if(event.key==='Enter') addPlayerToTeam()" />
+        <button onclick="addPlayerToTeam()">Add Player</button>
+        <input type="text" id="removePlayerName" placeholder="Remove player" onkeydown="if(event.key==='Enter') removePlayerFromTeam()" />
+        <button onclick="removePlayerFromTeam()">Remove Player</button><br>
+        <input type="text" id="newTeamName" placeholder="New team" onkeydown="if(event.key==='Enter') addTeam()" />
+        <button onclick="addTeam()">Add Team</button>
+        <input type="text" id="renameTeamName" placeholder="Rename selected team" onkeydown="if(event.key==='Enter') renameTeam()" />
+        <button onclick="renameTeam()">Rename Team</button>
+        <button onclick="removeTeam()">Remove Team</button>
+      </div>
+    </div>
+  </details>
+
+  <script>
+    // ===== AUTOSAVE ENABLED VERSION =====
+    const teams = {
+      Lions: ["Alice", "Bob", "Carl"],
+      Tigers: ["Dina", "Evan", "Fay"]
+    };
+    const stats = {};
+    const gameHistory = [];
+    const __lastTap = {};
+    const history = [];
+    let currentEditingGameId = null;
+    let pendingGameId = "";
+    const activePlayers = { 1: [], 2: [] };
+
+    const $ = (id) => document.getElementById(id);
+    const pKey = (team, player) => `${team}::${player}`;
+
+    // ===== AUTOSAVE FUNCTIONS =====
+    function saveState() {
+      try {
+        localStorage.setItem('statTrackerTeams', JSON.stringify(teams));
+        localStorage.setItem('statTrackerStats', JSON.stringify(stats));
+        localStorage.setItem('statTrackerGameHistory', JSON.stringify(gameHistory));
+        const gameIdInput = document.getElementById('gameIdInput');
+        localStorage.setItem('statTrackerCurrentGameId', gameIdInput ? gameIdInput.value : pendingGameId);
+      } catch(e) { console.error("Save error:", e); }
+    }
+    function loadState() {
+      try {
+        const t = localStorage.getItem('statTrackerTeams');
+        const s = localStorage.getItem('statTrackerStats');
+        const g = localStorage.getItem('statTrackerGameHistory');
+        const currentGameId = localStorage.getItem('statTrackerCurrentGameId');
+        if (currentGameId) pendingGameId = currentGameId;
+        if (t) {
+          const parsedTeams = JSON.parse(t);
+          if (parsedTeams && typeof parsedTeams === 'object') {
+            for (const k in teams) delete teams[k];
+            Object.assign(teams, parsedTeams);
+          }
+        }
+        if (s) {
+          const parsedStats = JSON.parse(s);
+          if (parsedStats && typeof parsedStats === 'object') {
+            for (const k in stats) delete stats[k];
+            Object.assign(stats, parsedStats);
+          }
+        }
+        if (g) {
+          const parsedGames = JSON.parse(g);
+          if (Array.isArray(parsedGames)) {
+            gameHistory.length = 0;
+            parsedGames.forEach(game => {
+              if (game && game.id != null) {
+                game.id = String(game.id);
+              }
+              gameHistory.push(game);
+            });
+          }
+        }
+      } catch(e) { console.error("Load error:", e); }
+    }
+
+    // Load saved state before anything else
+    loadState();
+
+    function ensurePlayer(team, player) {
+      const k = pKey(team, player);
+      if (!stats[k]) {
+        stats[k] = { made2:0, missed2:0, made3:0, missed3:0, ftMade:0, ftMiss:0,
+                     assist:0, steal:0, dreb:0, oreb:0, block:0, turnover:0, foul:0 };
+      }
+      return k;
+    }
+    const points = s => s.made2*2 + s.made3*3 + s.ftMade;
+    const att2 = s => s.made2 + s.missed2;
+    const att3 = s => s.made3 + s.missed3;
+    const attFT = s => s.ftMade + s.ftMiss;
+    const pct = (m,a) => a ? Math.round((m/a)*100)+'%' : '—';
+
+    function emptyStatLine() {
+      return { made2:0, missed2:0, made3:0, missed3:0, ftMade:0, ftMiss:0,
+               assist:0, steal:0, dreb:0, oreb:0, block:0, turnover:0, foul:0 };
+    }
+
+    function hasAnyRecordedStats() {
+      return Object.values(stats).some(s => Object.values(s || {}).some(v => Number(v) > 0));
+    }
+
+    function getGameSummary(teamName) {
+      const summary = { pts:0, m2:0, a2:0, m3:0, a3:0, mft:0, aft:0, reb:0, ast:0, stl:0, blk:0, tov:0, foul:0 };
+      (teams[teamName] || []).forEach(player => {
+        const s = stats[pKey(teamName, player)] || emptyStatLine();
+        summary.pts += points(s);
+        summary.m2 += s.made2 || 0;
+        summary.a2 += (s.made2 || 0) + (s.missed2 || 0);
+        summary.m3 += s.made3 || 0;
+        summary.a3 += (s.made3 || 0) + (s.missed3 || 0);
+        summary.mft += s.ftMade || 0;
+        summary.aft += (s.ftMade || 0) + (s.ftMiss || 0);
+        summary.reb += (s.dreb||0)+(s.oreb||0);
+        summary.ast += s.assist || 0;
+        summary.stl += s.steal || 0;
+        summary.blk += s.block || 0;
+        summary.tov += s.turnover || 0;
+        summary.foul += s.foul || 0;
+      });
+      return summary;
+    }
+
+
+
+    function ensureTeamExists(teamName, players = []) {
+      if (!teamName) return;
+      if (!teams[teamName]) {
+        teams[teamName] = [];
+      }
+      players.forEach(player => {
+        if (player && !teams[teamName].includes(player)) {
+          teams[teamName].push(player);
+        }
+      });
+    }
+
+
+    function getEnteredGameId() {
+      const el = $("gameIdInput");
+      return (el?.value || "").trim();
+    }
+
+    function setEnteredGameId(value) {
+      const el = $("gameIdInput");
+      if (el) el.value = value || "";
+      pendingGameId = value || "";
+    }
+
+    function updateEditModeUI() {
+      const info = $("editModeInfo");
+      const cancelBtn = $("cancelEditBtn");
+      const saveBtn = $("saveGameBtn");
+
+      if (currentEditingGameId) {
+        document.body.classList.add("editing-mode");
+        if (info) info.textContent = `Editing saved game: ${currentEditingGameId} (minus buttons enabled)`;
+        if (cancelBtn) cancelBtn.style.display = "inline-block";
+        if (saveBtn) saveBtn.textContent = "Update Saved Game";
+      } else {
+        document.body.classList.remove("editing-mode");
+        if (info) info.textContent = "";
+        if (cancelBtn) cancelBtn.style.display = "none";
+        if (saveBtn) saveBtn.textContent = "Save Final Game";
+      }
+    }
+
+    function cancelEditMode() {
+      currentEditingGameId = null;
+      updateEditModeUI();
+    }
+
+    function loadSavedGameForEdit(gameId) {
+      const game = gameHistory.find(g => String(g.id) === String(gameId));
+      if (!game) {
+        alert("Could not find that saved game.");
+        return;
+      }
+
+      if (hasAnyRecordedStats()) {
+        const proceed = confirm("Load this saved game for editing and replace the stats currently on screen?");
+        if (!proceed) return;
+      }
+
+      const team1Name = game.team1?.name || "Team 1";
+      const team2Name = game.team2?.name || "Team 2";
+      const team1Players = (game.team1?.players || []).map(p => p.player);
+      const team2Players = (game.team2?.players || []).map(p => p.player);
+
+      ensureTeamExists(team1Name, team1Players);
+      ensureTeamExists(team2Name, team2Players);
+
+      for (const k of Object.keys(stats)) delete stats[k];
+
+      (game.team1?.players || []).forEach(playerLine => {
+        const key = pKey(team1Name, playerLine.player);
+        stats[key] = { ...emptyStatLine(), ...JSON.parse(JSON.stringify(playerLine)) };
+        delete stats[key].player;
+      });
+
+      (game.team2?.players || []).forEach(playerLine => {
+        const key = pKey(team2Name, playerLine.player);
+        stats[key] = { ...emptyStatLine(), ...JSON.parse(JSON.stringify(playerLine)) };
+        delete stats[key].player;
+      });
+
+      initSelectors();
+      $("team1").value = team1Name;
+      $("team2").value = team2Name;
+      $("editTeam").value = team1Name;
+
+      activePlayers[1] = team1Players.slice(0,3);
+      activePlayers[2] = team2Players.slice(0,3);
+      loadTeamPlayers(1);
+      loadTeamPlayers(2);
+      showTeamPlayers();
+
+      if (!$("stats").classList.contains("hidden")) renderStatsBoxScore();
+      if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+
+      currentEditingGameId = String(game.id);
+      setEnteredGameId(String(game.id));
+      updateEditModeUI();
+      saveState();
+
+      alert(`Loaded ${game.id} for editing. Make your changes, then tap Update Saved Game.`);
+    }
+
+    function deleteSavedGame(gameId) {
+      const index = gameHistory.findIndex(game => String(game.id) === String(gameId));
+      if (index === -1) {
+        alert("Could not find that saved game.");
+        return;
+      }
+      if (!confirm(`Delete saved game ${gameId}?`)) return;
+      gameHistory.splice(index, 1);
+      if (String(currentEditingGameId) === String(gameId)) {
+        currentEditingGameId = null;
+        updateEditModeUI();
+      }
+      saveState();
+      updateSavedGamesInfo();
+      renderSavedGamesPreview();
+    }
+
+    function clearSavedGames() {
+      if (!gameHistory.length) {
+        alert("There are no saved games to clear.");
+        return;
+      }
+      if (!confirm("Clear the entire saved games log? This cannot be undone.")) return;
+      gameHistory.length = 0;
+      currentEditingGameId = null;
+      updateEditModeUI();
+      saveState();
+      updateSavedGamesInfo();
+      renderSavedGamesPreview();
+      alert("Saved games log cleared.");
+    }
+
+    function toggleSavedGamesPreview() {
+      const panel = $("savedGamesPreview");
+      if (!panel) return;
+      if (panel.classList.contains("hidden")) {
+        renderSavedGamesPreview();
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    function renderSavedGamesPreview() {
+      const panel = $("savedGamesPreview");
+      if (!panel) return;
+
+      if (!gameHistory.length) {
+        panel.innerHTML = '<h2>Saved Games Log</h2><div class="small">No saved games yet.</div>';
+        return;
+      }
+
+      let html = '<h2>Saved Games Log</h2>';
+      html += '<div class="small" style="margin-bottom:10px;">Tap Delete on any row to remove a duplicate or bad save.</div>';
+      html += '<div class="box" style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:14px;">';
+      html += `<thead><tr>
+        <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Game ID</th>
+        <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Saved At</th>
+        <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Matchup</th>
+        <th style="text-align:center; border-bottom:1px solid #ddd; padding:6px;">Score</th>
+        <th style="text-align:center; border-bottom:1px solid #ddd; padding:6px;">Players</th>
+        <th style="text-align:center; border-bottom:1px solid #ddd; padding:6px;">Actions</th>
+      </tr></thead><tbody>`;
+
+      [...gameHistory].reverse().forEach(game => {
+        const matchup = `${game.team1?.name || "Team 1"} vs ${game.team2?.name || "Team 2"}`;
+        const score = `${game.team1?.totals?.pts ?? 0} - ${game.team2?.totals?.pts ?? 0}`;
+        const playerCount = (game.team1?.players?.length || 0) + (game.team2?.players?.length || 0);
+
+        html += `<tr>
+          <td style="border-bottom:1px solid #f0f0f0; padding:6px;">${game.id}</td>
+          <td style="border-bottom:1px solid #f0f0f0; padding:6px;">${game.savedAt || ""}</td>
+          <td style="border-bottom:1px solid #f0f0f0; padding:6px;">${matchup}</td>
+          <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${score}</td>
+          <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${playerCount}</td>
+          <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">
+            <button class="primary" onclick="loadSavedGameForEdit('${game.id}')">Edit</button>
+            <button class="danger" onclick="deleteSavedGame('${game.id}')">Delete</button>
+          </td>
+        </tr>`;
+      });
+
+      html += "</tbody></table></div>";
+      panel.innerHTML = html;
+    }
+
+
+    function fgMade(s) {
+      return (s.made2 || 0) + (s.made3 || 0);
+    }
+
+    function fgAtt(s) {
+      return (s.made2 || 0) + (s.missed2 || 0) + (s.made3 || 0) + (s.missed3 || 0);
+    }
+
+    function formatPctOneDecimal(made, attempts) {
+      return attempts ? ((made / attempts) * 100).toFixed(1) + "%" : "—";
+    }
+
+    function efgPct(s) {
+      const attempts = fgAtt(s);
+      return attempts ? (((fgMade(s) + 0.5 * (s.made3 || 0)) / attempts) * 100).toFixed(1) + "%" : "—";
+    }
+
+    function tsPct(s) {
+      const fga = fgAtt(s);
+      const fta = (s.ftMade || 0) + (s.ftMiss || 0);
+      const denom = 2 * (fga + 0.44 * fta);
+      return denom ? ((points(s) / denom) * 100).toFixed(1) + "%" : "—";
+    }
+
+    function astToRatio(s) {
+      const ast = s.assist || 0;
+      const tov = s.turnover || 0;
+      if (!ast && !tov) return "—";
+      if (!tov) return "∞";
+      return (ast / tov).toFixed(2);
+    }
+
+    function pointsPerShot(s) {
+      const attempts = fgAtt(s);
+      return attempts ? (points(s) / attempts).toFixed(2) : "—";
+    }
+
+    function weightedDefensiveImpact(s) {
+      const steals = s.steal || 0;
+      const blocks = s.block || 0;
+      return ((steals * 1.5) + (blocks * 1.2)).toFixed(1);
+    }
+
+    function mistakeLoad(s) {
+      const turnovers = s.turnover || 0;
+      const fouls = s.foul || 0;
+      return ((turnovers * 1.0) + (fouls * 0.75)).toFixed(1);
+    }
+
+    function getAdvancedTeamSummary(teamName) {
+      const total = emptyStatLine();
+      (teams[teamName] || []).forEach(player => {
+        const s = stats[pKey(teamName, player)] || emptyStatLine();
+        Object.keys(total).forEach(key => {
+          total[key] += s[key] || 0;
+        });
+      });
+      return total;
+    }
+
+    function toggleAdvancedStats() {
+      const panel = $("advancedStats");
+      if (!panel) return;
+      if (panel.classList.contains("hidden")) {
+        renderAdvancedStats();
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    function renderAdvancedStats() {
+      const panel = $("advancedStats");
+      if (!panel) return;
+
+      const teamNames = [$("team1").value, $("team2").value].filter(Boolean);
+      let html = "<h2>Advanced Stats</h2>";
+      html += '<div class="small" style="margin-bottom:10px;">Preview layout: FG%, eFG%, TS%, AST/TO, PPS, plus two weighted impact metrics: Def Impact (STL×1.5 + BLK×1.2) and Mistake Load (TOV×1.0 + Foul×0.75).</div>';
+      html += '<div class="advanced-grid">';
+
+      teamNames.forEach(teamName => {
+        html += `<div class="advanced-card"><h3>${teamName}</h3>`;
+        html += `<table class="advanced-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>FG%</th>
+              <th>eFG%</th>
+              <th>TS%</th>
+              <th>AST/TO</th>
+              <th>PPS</th>
+              <th>Def Impact</th>
+              <th>Mistake Load</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+        (teams[teamName] || []).forEach(player => {
+          const s = stats[pKey(teamName, player)] || emptyStatLine();
+          html += `<tr>
+            <td>${player}</td>
+            <td>${formatPctOneDecimal(fgMade(s), fgAtt(s))}</td>
+            <td>${efgPct(s)}</td>
+            <td>${tsPct(s)}</td>
+            <td>${astToRatio(s)}</td>
+            <td>${pointsPerShot(s)}</td>
+            <td>${weightedDefensiveImpact(s)}</td>
+            <td>${mistakeLoad(s)}</td>
+          </tr>`;
+        });
+
+        const total = getAdvancedTeamSummary(teamName);
+        html += `<tr>
+          <td><strong>Team Total</strong></td>
+          <td><strong>${formatPctOneDecimal(fgMade(total), fgAtt(total))}</strong></td>
+          <td><strong>${efgPct(total)}</strong></td>
+          <td><strong>${tsPct(total)}</strong></td>
+          <td><strong>${astToRatio(total)}</strong></td>
+          <td><strong>${pointsPerShot(total)}</strong></td>
+          <td><strong>${weightedDefensiveImpact(total)}</strong></td>
+          <td><strong>${mistakeLoad(total)}</strong></td>
+        </tr>`;
+
+        html += "</tbody></table></div>";
+      });
+
+      html += "</div>";
+      panel.innerHTML = html;
+    }
+
+    function updateSavedGamesInfo() {
+      const el = $("savedGamesInfo");
+      if (!el) return;
+      el.textContent = gameHistory.length === 1
+        ? "Saved games: 1"
+        : `Saved games: ${gameHistory.length}`;
+    }
+
+    function toggleStats() {
+      const panel = $("stats");
+      if (!panel) return;
+      if (panel.classList.contains("hidden")) {
+        renderStatsBoxScore();
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    function renderStatsBoxScore() {
+      const panel = $("stats");
+      if (!panel) return;
+      const teamNames = [$("team1").value, $("team2").value].filter(Boolean);
+      let html = "<h2>Box Score</h2>";
+      teamNames.forEach(teamName => {
+        html += `<h3>${teamName}</h3><div class="box" style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:14px;">`;
+        html += `<thead><tr>
+          <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Player</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">PTS</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">2FG</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">3FG</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">FT</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">REB</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">AST</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">STL</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">BLK</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">TOV</th>
+          <th style="border-bottom:1px solid #ddd; padding:6px;">Foul</th>
+        </tr></thead><tbody>`;
+        (teams[teamName] || []).forEach(player => {
+          const s = stats[pKey(teamName, player)] || emptyStatLine();
+          html += `<tr>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px;">${player}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${points(s)}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.made2 || 0}/${att2(s) || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.made3 || 0}/${att3(s) || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.ftMade || 0}/${attFT(s) || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${(s.dreb||0)+(s.oreb||0)}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.assist || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.steal || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.block || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.turnover || 0}</td>
+            <td style="border-bottom:1px solid #f0f0f0; padding:6px; text-align:center;">${s.foul || 0}</td>
+          </tr>`;
+        });
+        const summary = getGameSummary(teamName);
+        html += `<tr>
+          <td style="padding:6px; font-weight:bold;">Team Total</td>
+          <td style="padding:6px; text-align:center; font-weight:bold;">${summary.pts}</td>
+          <td style="padding:6px; text-align:center;">${summary.m2}/${summary.a2}</td>
+          <td style="padding:6px; text-align:center;">${summary.m3}/${summary.a3}</td>
+          <td style="padding:6px; text-align:center;">${summary.mft}/${summary.aft}</td>
+          <td style="padding:6px; text-align:center;">${summary.reb}</td>
+          <td style="padding:6px; text-align:center;">${summary.ast}</td>
+          <td style="padding:6px; text-align:center;">${summary.stl}</td>
+          <td style="padding:6px; text-align:center;">${summary.blk}</td>
+          <td style="padding:6px; text-align:center;">${summary.tov}</td>
+          <td style="padding:6px; text-align:center;">${summary.foul}</td>
+        </tr>`;
+        html += "</tbody></table></div>";
+      });
+      panel.innerHTML = html;
+    }
+
+    
+function slugifyTeamName(name) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9_]/g, "");
+}
+
+function generateGameId(team1Name, team2Name) {
+  const team1Slug = slugifyTeamName(team1Name) || "Team1";
+  const team2Slug = slugifyTeamName(team2Name) || "Team2";
+  const matchupPrefix = `${team1Slug}_vs_${team2Slug}`;
+
+  const existingCount = gameHistory.filter(game =>
+    typeof game?.id === "string" && game.id.startsWith(matchupPrefix + "_")
+  ).length;
+
+  const iteration = String(existingCount + 1).padStart(3, "0");
+  return `${matchupPrefix}_${iteration}`;
+}
+
+
+    function finalizeGame() {
+      if (!hasAnyRecordedStats()) {
+        alert("There are no recorded stats to save yet.");
+        return;
+      }
+
+      const manualGameId = getEnteredGameId();
+      if (!manualGameId) {
+        alert("Please type a Game ID before saving.");
+        return;
+      }
+
+      const team1Name = $("team1").value;
+      const team2Name = $("team2").value;
+
+      const wasEditing = Boolean(currentEditingGameId);
+      const duplicateIndex = gameHistory.findIndex(savedGame => String(savedGame.id) === String(manualGameId));
+
+      if (!wasEditing && duplicateIndex !== -1) {
+        alert("That Game ID already exists. Please use a different Game ID.");
+        return;
+      }
+
+      if (wasEditing && duplicateIndex !== -1 && String(gameHistory[duplicateIndex].id) !== String(currentEditingGameId)) {
+        alert("That Game ID is already being used by another saved game. Please choose a different Game ID.");
+        return;
+      }
+
+      const game = {
+        id: String(manualGameId),
+        savedAt: new Date().toLocaleString(),
+        team1: {
+          name: team1Name,
+          totals: getGameSummary(team1Name),
+          players: []
+        },
+        team2: {
+          name: team2Name,
+          totals: getGameSummary(team2Name),
+          players: []
+        }
+      };
+
+      (teams[team1Name] || []).forEach(player => {
+        const key = pKey(team1Name, player);
+        game.team1.players.push({
+          player,
+          ...JSON.parse(JSON.stringify(stats[key] || emptyStatLine()))
+        });
+      });
+
+      (teams[team2Name] || []).forEach(player => {
+        const key = pKey(team2Name, player);
+        game.team2.players.push({
+          player,
+          ...JSON.parse(JSON.stringify(stats[key] || emptyStatLine()))
+        });
+      });
+
+      if (currentEditingGameId) {
+        const existingIndex = gameHistory.findIndex(savedGame => String(savedGame.id) === String(currentEditingGameId));
+        if (existingIndex === -1) {
+          alert("Could not find the saved game to update. Saving it as a new game instead.");
+          gameHistory.push(game);
+        } else {
+          gameHistory[existingIndex] = game;
+        }
+      } else {
+        gameHistory.push(game);
+      }
+
+      currentEditingGameId = String(game.id);
+      setEnteredGameId(String(game.id));
+      updateSavedGamesInfo();
+      updateEditModeUI();
+      saveState();
+      if (!$("savedGamesPreview").classList.contains("hidden")) renderSavedGamesPreview();
+      if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+      alert(wasEditing ? "Saved game updated. Click 'Cancel Edit' to close out of edit." : "Game saved. You can export all saved games to CSV anytime.");
+    }
+
+    function exportGameHistoryCSV() {
+      if (!gameHistory.length) {
+        alert("No saved games to export.");
+        return;
+      }
+
+      const rows = [[
+        "Game ID","Saved At","Team","Opponent","Player",
+        "Points",
+        "Made 2","Missed 2","2FG Att","2FG %",
+        "Made 3","Missed 3","3FG Att","3FG %",
+        "FG Made","FG Miss","FG Att","FG %",
+        "FT Made","FT Miss","FT Att","FT %",
+        "AST","OREB","DREB","REB","STL","BLK","TOV","Foul",
+        "eFG %","TS %","AST/TO","PPS","Def Impact","Mistake Load",
+        "Win"
+      ]];
+
+      gameHistory.forEach(game => {
+        const team1Pts = game.team1?.totals?.pts ?? 0;
+        const team2Pts = game.team2?.totals?.pts ?? 0;
+
+        [
+          {
+            current: game.team1,
+            opponent: game.team2?.name || "",
+            winLabel: team1Pts > team2Pts ? "Win" : team1Pts < team2Pts ? "Loss" : "Tie"
+          },
+          {
+            current: game.team2,
+            opponent: game.team1?.name || "",
+            winLabel: team2Pts > team1Pts ? "Win" : team2Pts < team1Pts ? "Loss" : "Tie"
+          }
+        ].forEach(side => {
+          (side.current?.players || []).forEach(playerLine => {
+            const s = { ...emptyStatLine(), ...playerLine };
+
+            const made2 = s.made2 || 0;
+            const missed2 = s.missed2 || 0;
+            const made3 = s.made3 || 0;
+            const missed3 = s.missed3 || 0;
+            const ftMade = s.ftMade || 0;
+            const ftMiss = s.ftMiss || 0;
+            const oreb = s.oreb || 0;
+            const dreb = s.dreb || 0;
+            const reb = oreb + dreb;
+
+            const twoAtt = made2 + missed2;
+            const threeAtt = made3 + missed3;
+            const fgm = fgMade(s);
+            const fga = fgAtt(s);
+            const fgMiss = missed2 + missed3;
+            const fta = ftMade + ftMiss;
+            const pts = points(s);
+
+            rows.push([
+              game.id,
+              game.savedAt,
+              side.current?.name || "",
+              side.opponent,
+              playerLine.player,
+              pts,
+              made2,
+              missed2,
+              twoAtt,
+              formatPctOneDecimal(made2, twoAtt),
+              made3,
+              missed3,
+              threeAtt,
+              formatPctOneDecimal(made3, threeAtt),
+              fgm,
+              fgMiss,
+              fga,
+              formatPctOneDecimal(fgm, fga),
+              ftMade,
+              ftMiss,
+              fta,
+              formatPctOneDecimal(ftMade, fta),
+              s.assist || 0,
+              oreb,
+              dreb,
+              reb,
+              s.steal || 0,
+              s.block || 0,
+              s.turnover || 0,
+              s.foul || 0,
+              efgPct(s),
+              tsPct(s),
+              astToRatio(s),
+              pointsPerShot(s),
+              weightedDefensiveImpact(s),
+              mistakeLoad(s),
+              side.winLabel
+            ]);
+          });
+        });
+      });
+
+      const csv = rows
+        .map(row => row.map(value => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "dlba_saved_games.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+
+    function safeSeedIfEmpty() {
+      if (!teams || typeof teams !== 'object' || Object.keys(teams).length === 0) {
+        teams["Lions"] = ["Alice","Bob","Carl"];
+        teams["Tigers"] = ["Dina","Evan","Fay"];
+      }
+    }
+
+    function initSelectors() {
+      safeSeedIfEmpty();
+      ["team1","team2","editTeam"].forEach(id => {
+        const dd = $(id);
+        dd.innerHTML = "";
+        Object.keys(teams).forEach(team => {
+          const opt = document.createElement("option");
+          opt.value = team; opt.textContent = team;
+          dd.appendChild(opt);
+        });
+      });
+      const keys = Object.keys(teams);
+      $("team1").value = keys[0] || "";
+      $("team2").value = keys[1] || keys[0] || "";
+      $("editTeam").value = keys[0] || "";
+    }
+
+    function ensureActivePlayers(n) {
+      const teamName = $("team"+n).value;
+      const roster = teams[teamName] || [];
+      const current = (activePlayers[n] || []).filter(p => roster.includes(p));
+      roster.forEach(p => {
+        if (current.length < 3 && !current.includes(p)) current.push(p);
+      });
+      activePlayers[n] = current.slice(0,3);
+    }
+
+    function handleTeamChange(n) {
+      activePlayers[n] = [];
+      ensureActivePlayers(n);
+      renderActiveTeam(n);
+      updateTeamTotals(n);
+      if (n === 1) $("score-team1-name").textContent = $("team1").value || "Team 1";
+      if (n === 2) $("score-team2-name").textContent = $("team2").value || "Team 2";
+      const title = $("team"+n+"-console-title");
+      if (title) title.textContent = $("team"+n).value || ("Team "+n);
+      saveState();
+    }
+
+    function allStatButtons(teamName, player) {
+      const scoring = [
+        ["+2","made2","success"],["2 Miss","missed2","danger"],["+3","made3","success"],
+        ["3 Miss","missed3","danger"],["FT","ftMade","success"],["FT Miss","ftMiss","danger"]
+      ];
+      const playmaking = [
+        ["AST","assist","accent"],["OREB","oreb","accent"],["DREB","dreb","accent"]
+      ];
+      const defense = [
+        ["STL","steal","accent"],["BLK","block","accent"],["TOV","turnover","warn"],["Foul","foul","warn"]
+      ];
+
+      const makeButtons = arr => arr.map(([label,stat,cls]) =>
+        `<button class="${cls}" onclick="increment('${teamName}','${player}','${stat}')">${label}</button>`
+      ).join("");
+
+      return `
+        <div class="all-stat-groups">
+          <div class="stat-cluster">
+            <div class="cluster-title">Scoring</div>
+            <div class="cluster-buttons">${makeButtons(scoring)}</div>
+          </div>
+          <div class="stat-cluster">
+            <div class="cluster-title">Playmaking / Rebounding</div>
+            <div class="cluster-buttons">${makeButtons(playmaking)}</div>
+          </div>
+          <div class="stat-cluster">
+            <div class="cluster-title">Defense / Mistakes</div>
+            <div class="cluster-buttons">${makeButtons(defense)}</div>
+          </div>
+        </div>`;
+    }
+
+    function benchOptions(n, slotIndex) {
+      const teamName = $("team"+n).value;
+      const active = activePlayers[n] || [];
+      const current = active[slotIndex];
+      const bench = (teams[teamName] || []).filter(p => !active.includes(p));
+      if (!bench.length) return `<option value="">No bench</option>`;
+      return `<option value="">Sub...</option>` + bench.map(p => `<option value="${p}">${p}</option>`).join("");
+    }
+
+    function renderActiveTeam(n) {
+      ensureActivePlayers(n);
+      const teamName = $("team"+n).value;
+      const container = $("active-team-"+n);
+      const title = $("team"+n+"-console-title");
+      if (title) title.textContent = teamName || ("Team "+n);
+      if (!container) return;
+
+      const html = (activePlayers[n] || []).map((player, idx) => {
+        ensurePlayer(teamName, player);
+        const s = stats[pKey(teamName, player)] || emptyStatLine();
+        return `<div class="player-row">
+          <div class="player-name">${player}</div>
+          ${allStatButtons(teamName, player)}
+          <div class="player-meta">
+            <div class="live-line" id="live-${n}-${idx}">${points(s)} PTS · ${(s.oreb||0)+(s.dreb||0)} REB · ${s.assist||0} AST</div>
+            <div class="sub-row">
+              <select id="sub-${n}-${idx}">${benchOptions(n,idx)}</select>
+              <button type="button" onclick="substitutePlayer(${n},${idx})">SUB</button>
+            </div>
+          </div>
+        </div>`;
+      }).join("");
+
+      container.innerHTML = html || '<div class="small">Add players to this team in Settings.</div>';
+      if (n === 1) $("score-team1-name").textContent = teamName || "Team 1";
+      if (n === 2) $("score-team2-name").textContent = teamName || "Team 2";
+    }
+
+    function substitutePlayer(n, slotIndex) {
+      const select = $("sub-"+n+"-"+slotIndex);
+      if (!select || !select.value) return;
+      const incoming = select.value;
+      const outgoing = activePlayers[n][slotIndex];
+      if (!incoming || incoming === outgoing) return;
+
+      history.push({type:"sub", side:n, slot:slotIndex, outgoing, incoming});
+      activePlayers[n][slotIndex] = incoming;
+      ensurePlayer($("team"+n).value, incoming);
+      renderActiveTeam(n);
+      syncUndoButton();
+      saveState();
+    }
+
+    function loadTeamPlayers(n) {
+      ensureActivePlayers(n);
+      renderActiveTeam(n);
+      updateTeamTotals(n);
+    }
+
+    function updatePlayerLine(team, player) {
+      [1,2].forEach(n => {
+        const teamName = $("team"+n)?.value;
+        if (teamName !== team) return;
+        const idx = (activePlayers[n] || []).indexOf(player);
+        if (idx === -1) return;
+        const el = $("live-"+n+"-"+idx);
+        if (!el) return;
+        const s = stats[pKey(team, player)] || emptyStatLine();
+        el.textContent = `${points(s)} PTS · ${(s.oreb||0)+(s.dreb||0)} REB · ${s.assist||0} AST`;
+      });
+    }
+
+    function updateTeamTotals(n) {
+      const teamName = $("team"+n).value;
+      const summary = getGameSummary(teamName);
+      const scoreEl = $("team"+n+"-score");
+      if (scoreEl) scoreEl.textContent = summary.pts;
+      const nameEl = $("score-team"+n+"-name");
+      if (nameEl) nameEl.textContent = teamName || ("Team "+n);
+    }
+
+    function decrement(team, player, stat) {
+      if (!currentEditingGameId) return;
+
+      const k = ensurePlayer(team, player);
+      if ((stats[k][stat] || 0) <= 0) return;
+
+      stats[k][stat]--;
+      updatePlayerLine(team, player);
+      updateTeamTotals(1);
+      updateTeamTotals(2);
+      if (!$("stats").classList.contains("hidden")) renderStatsBoxScore();
+      if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+      saveState();
+    }
+
+    function increment(team, player, stat) {
+      const k = ensurePlayer(team, player);
+      const tapKey = team+'|'+player+'|'+stat;
+      const now = Date.now();
+      if (__lastTap[tapKey] && (now - __lastTap[tapKey]) < 220) { return; }
+      __lastTap[tapKey] = now;
+      stats[k][stat]++;
+      history.push({type:'increment', team, player, stat});
+      updatePlayerLine(team, player);
+      updateTeamTotals(1);
+      updateTeamTotals(2);
+      if (!$("stats").classList.contains("hidden")) renderStatsBoxScore();
+      if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+      syncUndoButton();
+      saveState();
+    }
+
+    function undo() {
+      if (!history.length) return;
+      const last = history.pop();
+      if (last.type === 'increment') {
+        const k = pKey(last.team, last.player);
+        if (stats[k] && stats[k][last.stat] > 0) {
+          stats[k][last.stat]--;
+        }
+        updatePlayerLine(last.team, last.player);
+      } else if (last.type === 'sub') {
+        activePlayers[last.side][last.slot] = last.outgoing;
+        renderActiveTeam(last.side);
+      } else if (last.type === 'newgame') {
+        if (last.prevStats) {
+          for (const k of Object.keys(stats)) delete stats[k];
+          Object.assign(stats, last.prevStats);
+        }
+        loadTeamPlayers(1);
+        loadTeamPlayers(2);
+        if (!$("stats").classList.contains("hidden")) renderStatsBoxScore();
+        if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+      }
+      updateTeamTotals(1);
+      updateTeamTotals(2);
+      syncUndoButton();
+      saveState();
+    }
+
+    function newGame() {
+      if (hasAnyRecordedStats()) {
+        const shouldSave = confirm("Save this completed game before clearing stats for a new one?");
+        if (shouldSave) {
+          finalizeGame();
+        }
+      }
+
+      currentEditingGameId = null;
+      setEnteredGameId("");
+      updateEditModeUI();
+
+      const snapshot = JSON.parse(JSON.stringify(stats));
+      history.push({ type: 'newgame', prevStats: snapshot });
+      for (const k of Object.keys(stats)) delete stats[k];
+      loadTeamPlayers(1);
+      loadTeamPlayers(2);
+      if (!$("stats").classList.contains("hidden")) renderStatsBoxScore();
+      if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+      syncUndoButton();
+      saveState();
+    }
+
+    function syncUndoButton() {
+      const btn = $("undoBtn");
+      if (btn) btn.disabled = history.length === 0;
+    }
+
+    function showTeamPlayers() {
+      const team = $("editTeam").value;
+      const ul = $("teamPlayerList");
+      ul.innerHTML = "";
+      (teams[team]||[]).forEach(player => {
+        const li = document.createElement("li");
+        li.textContent = player;
+        ul.appendChild(li);
+      });
+    }
+
+    function addPlayerToTeam() {
+      const team = $("editTeam").value;
+      const newPlayer = $("newPlayerName").value.trim();
+      if (newPlayer && (!teams[team] || !teams[team].includes(newPlayer))) {
+        if (!teams[team]) teams[team] = [];
+        teams[team].push(newPlayer);
+        $("newPlayerName").value = "";
+        showTeamPlayers();
+        if ($("team1").value === team) loadTeamPlayers(1);
+        if ($("team2").value === team) loadTeamPlayers(2);
+        saveState();
+      }
+    }
+
+    function removePlayerFromTeam() {
+      const team = $("editTeam").value;
+      const removePlayer = $("removePlayerName").value.trim();
+      if (!teams[team]) return;
+      const index = teams[team].indexOf(removePlayer);
+      if (index !== -1) {
+        teams[team].splice(index, 1);
+        delete stats[pKey(team, removePlayer)];
+        $("removePlayerName").value = "";
+        showTeamPlayers();
+        if ($("team1").value === team) loadTeamPlayers(1);
+        if ($("team2").value === team) loadTeamPlayers(2);
+        saveState();
+      }
+    }
+
+    function addTeam() {
+      const newTeam = $("newTeamName").value.trim();
+      if (!newTeam) { alert("Please enter a team name."); return; }
+      if (teams[newTeam]) { alert("That team already exists."); return; }
+      teams[newTeam] = [];
+      $("newTeamName").value = "";
+      initSelectors();
+      loadTeamPlayers(1);
+      loadTeamPlayers(2);
+      $("editTeam").value = newTeam;
+      showTeamPlayers();
+      saveState();
+    }
+
+    function renameTeam() {
+      const oldTeam = $("editTeam").value;
+      const newTeam = $("renameTeamName").value.trim();
+      if (!newTeam) return;
+      if (teams[newTeam]) { alert("That name is already used."); return; }
+      teams[newTeam] = teams[oldTeam] || [];
+      delete teams[oldTeam];
+      const keys = Object.keys(stats);
+      keys.forEach(k => {
+        if (k.startsWith(oldTeam + '::')) {
+          const player = k.split('::')[1];
+          stats[newTeam + '::' + player] = stats[k];
+          delete stats[k];
+        }
+      });
+      $("renameTeamName").value = "";
+      initSelectors();
+      loadTeamPlayers(1);
+      loadTeamPlayers(2);
+      $("editTeam").value = newTeam;
+      showTeamPlayers();
+      saveState();
+    }
+
+    function removeTeam() {
+      const team = $("editTeam").value;
+      if (team && confirm(`Are you sure you want to delete team ${team}?`)) {
+        delete teams[team];
+        Object.keys(stats).forEach(k => { if (k.startsWith(team+'::')) delete stats[k]; });
+        initSelectors();
+        activePlayers[1] = [];
+        activePlayers[2] = [];
+        loadTeamPlayers(1);
+        loadTeamPlayers(2);
+        showTeamPlayers();
+        saveState();
+      }
+    }
+
+    function init() {
+      try {
+        initSelectors();
+        loadTeamPlayers(1);
+        loadTeamPlayers(2);
+        showTeamPlayers();
+        updateSavedGamesInfo();
+        setEnteredGameId(pendingGameId);
+        updateEditModeUI();
+        if (!$("advancedStats").classList.contains("hidden")) renderAdvancedStats();
+        syncUndoButton();
+      } catch (e) {
+        alert("Init error: " + e.message);
+        console.error(e);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>
